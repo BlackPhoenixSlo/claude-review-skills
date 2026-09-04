@@ -1,0 +1,4 @@
+.DS_Store
+*.log
+scratchpad/
+node_modules/
