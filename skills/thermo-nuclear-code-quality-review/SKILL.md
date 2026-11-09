@@ -1,7 +1,6 @@
 ---
 name: thermo-nuclear-code-quality-review
-description: Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth. Use for a thermo-nuclear code quality review, thermonuclear review, deep code quality audit, or especially harsh maintainability review.
-disable-model-invocation: false
+description: "Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth. Use for a thermo-nuclear code quality review, thermonuclear review, deep code quality audit, or especially harsh maintainability review."
 ---
 
 # Thermo-Nuclear Code Quality Review
@@ -9,6 +8,10 @@ disable-model-invocation: false
 Use this skill for an unusually strict review focused on implementation quality, maintainability, abstraction quality, and codebase health.
 
 Above all, this skill should push the reviewer to be **ambitious** about code structure. Do not merely identify local cleanup opportunities. Actively search for "code judo" moves: restructurings that preserve behavior while making the implementation dramatically simpler, smaller, more direct, and more elegant.
+
+## Repository guidance
+
+Before reviewing, explicitly read root `REVIEW.md` when present, plus applicable `CLAUDE.md`/`AGENTS.md` instructions. Root wins over a `.claude/REVIEW.md` backup; do not count duplicated rules twice. Apply repository evidence, severity, and validation guidance alongside this structural lens. Slop is not a universal gate; follow the repository's relevance decision and report a justified skip faithfully.
 
 ## Core Prompt
 

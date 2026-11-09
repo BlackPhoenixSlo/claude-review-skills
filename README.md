@@ -31,7 +31,10 @@ Codifies a build-and-review loop that runs both lenses and drives fixes to compl
 5. **Re-review** both passes until each finding is CLOSED and nothing new broke.
 6. **Commit** — the only step that pauses for human approval.
 
-Invoke with `/review-loop`, or just ask Claude to "run the review loop."
+Invoke with `/review-loop` or `/rwl`, or ask Claude to "run the review loop."
+Use `/rwl-codexedits` for a Codex Sol writer with Claude reviewers.
+The loop also uses bounded Codex review, devil's-advocate, and final-check calls;
+missing Codex is reported without blocking the Claude loop.
 
 ## The one rule that makes it work
 
@@ -47,15 +50,28 @@ findings, and that specificity is its whole strength. Genericizing it would turn
 tool into a vague one. `review-loop` generates a fresh correctness prompt per project (from
 the project's spec/design docs) rather than shipping one.
 
+## Repository review rules
+
+Both skills explicitly read the target repository's root `REVIEW.md` when present,
+alongside applicable `CLAUDE.md`/`AGENTS.md` instructions. RWL passes those rules to
+all reviewers and the fixer. Root wins over a `.claude/REVIEW.md` backup copy.
+Keep durable review rules there and current-change acceptance criteria in the
+per-run correctness prompt. App-specific rules do not belong in this skill repo.
+
+Choose validation by relevance: slop is not a universal gate. Explain a skip;
+retain applicable runtime, regression, and UI proof. Codex review calls explicitly
+load `REVIEW.md` through `codex exec` rather than assuming auto-discovery.
+
 ## Install
 
 Copy into your Claude Code config:
 
 ```sh
+mkdir -p ~/.claude/skills ~/.claude/commands
 # skills (user-wide)
 cp -r skills/* ~/.claude/skills/
-# the /th command
-cp commands/th.md ~/.claude/commands/
+# /th, /rwl, and /rwl-codexedits commands
+cp commands/*.md ~/.claude/commands/
 ```
 
 Or clone anywhere and symlink the directories into `~/.claude/`.
