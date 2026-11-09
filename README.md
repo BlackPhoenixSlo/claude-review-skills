@@ -62,6 +62,12 @@ Choose validation by relevance: slop is not a universal gate. Explain a skip;
 retain applicable runtime, regression, and UI proof. Codex review calls explicitly
 load `REVIEW.md` through `codex exec` rather than assuming auto-discovery.
 
+Start with [examples/REVIEW.md](examples/REVIEW.md), a sample for a multi-tenant
+web app with background jobs. Copy it to your project's root as `REVIEW.md`,
+replace the example invariants with your own, and remove irrelevant sections.
+The example supplements the project-specific correctness prompt; it does not
+replace it. An optional `.claude/REVIEW.md` backup should be identical.
+
 ## Install
 
 Copy into your Claude Code config:
