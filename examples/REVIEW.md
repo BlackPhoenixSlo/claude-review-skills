@@ -41,8 +41,8 @@ and general coding instructions in CLAUDE.md / AGENTS.md. -->
   that the regression check fails without the fix and passes with it.
 - For UI changes, inspect a settled screenshot and verify the relevant API,
   persisted state, or other observable effect.
-- Use slop/load scenarios when they add coverage for changed flows, concurrency,
-  or volume. Skip irrelevant scenarios with a reason; missing slop alone is not
+- Use end-to-end/load scenarios when they add coverage for changed flows, concurrency,
+  or volume. Skip irrelevant scenarios with a reason; missing those alone is not
   a finding. Follow repository instructions for any selected scenario.
 - Use local/dev data and stub external effects. Do not validate by changing
   production data or invoking paid services.

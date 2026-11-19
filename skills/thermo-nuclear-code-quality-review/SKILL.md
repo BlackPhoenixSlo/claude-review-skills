@@ -11,7 +11,7 @@ Above all, this skill should push the reviewer to be **ambitious** about code st
 
 ## Repository guidance
 
-Before reviewing, explicitly read root `REVIEW.md` when present, plus applicable `CLAUDE.md`/`AGENTS.md` instructions. Root wins over a `.claude/REVIEW.md` backup; do not count duplicated rules twice. Apply repository evidence, severity, and validation guidance alongside this structural lens. Slop is not a universal gate; follow the repository's relevance decision and report a justified skip faithfully.
+Before reviewing, explicitly read root `REVIEW.md` when present, plus applicable `CLAUDE.md`/`AGENTS.md` instructions. Root wins over a `.claude/REVIEW.md` backup; do not count duplicated rules twice. Apply repository evidence, severity, and validation guidance alongside this structural lens. Expensive end-to-end suites are not a universal gate; follow the repository's relevance decision and report a justified skip faithfully.
 
 ## Core Prompt
 
