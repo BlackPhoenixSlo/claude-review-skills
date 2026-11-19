@@ -28,13 +28,19 @@ Codifies a build-and-review loop that runs both lenses and drives fixes to compl
    correctness prompt for behavior. Both read-only.
 3. **Merge** the findings into one ranked, deduplicated list.
 4. **Fix** with a single writer, in ranked order (blockers first).
-5. **Re-review** both passes until each finding is CLOSED and nothing new broke.
+5. **Re-review** the fix delta until each blocker/major finding is CLOSED and nothing new broke.
 6. **Commit** — the only step that pauses for human approval.
 
 Invoke with `/review-loop` or `/rwl`, or ask Claude to "run the review loop."
 Use `/rwl-codexedits` for a Codex Sol writer with Claude reviewers.
 The loop also uses bounded Codex review, devil's-advocate, and final-check calls;
 missing Codex is reported without blocking the Claude loop.
+
+**Cost rules.** Small diffs (<200 lines, nothing touching background jobs, DB writes,
+retries, locks, auth or money) get one cheaper reviewer with both lenses and no Codex.
+Re-reviews check only the fix delta and return verdicts. Findings are blocker / major /
+minor: only blocker+major loop; minors get one fix pass, then are listed as deferred.
+Cap: round 1 + 2 re-reviews, then one Codex stuck-breaker, then report what is still open.
 
 ## The one rule that makes it work
 
@@ -58,7 +64,7 @@ all reviewers and the fixer. Root wins over a `.claude/REVIEW.md` backup copy.
 Keep durable review rules there and current-change acceptance criteria in the
 per-run correctness prompt. App-specific rules do not belong in this skill repo.
 
-Choose validation by relevance: slop is not a universal gate. Explain a skip;
+Choose validation by relevance: expensive end-to-end suites are opt-in, run once at the final head. Explain a skip;
 retain applicable runtime, regression, and UI proof. Codex review calls explicitly
 load `REVIEW.md` through `codex exec` rather than assuming auto-discovery.
 

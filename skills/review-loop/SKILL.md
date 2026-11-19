@@ -18,13 +18,26 @@ Two read-only reviews in parallel, one writer, re-review until clean, human appr
 
 ## Non-negotiables
 
-- **One writer at a time.** The fixer never runs alongside a reviewer. A writer editing files a reader is analyzing produces a stale, untrustworthy report. Reviewers run in parallel with each other because they only read; fixing runs alone.
+- **One writer at a time.** The fixer never runs alongside a reviewer on the live tree. A writer editing files a reader is analyzing produces a stale, untrustworthy report. Reviewers run in parallel with each other because they only read; fixing runs alone.
 - **Reviewers are read-only.** No write access, no edits, no "quick fix while I'm here". The fixer is the only agent that touches files.
 - **Quiet tree.** Reviews start only when no edits are in flight and the tree is stable. Confirm before fanning out.
-- **Structure and correctness are different lenses.** Run both, every time. A beautifully-structured file can still lose data; a correct file can still be unmaintainable. One clean review is not approval.
+- **Structure and correctness are different lenses.** Both run in round 1 (one combined prompt on small diffs); re-reviews are delta verdicts (Cost rules). A beautifully-structured file can still lose data; a correct file can still be unmaintainable. One clean review is not approval.
 - **The correctness prompt is project-specific on purpose.** It traces behavior against this project's own spec and failure modes. That specificity is its strength; keep it that way. The structure review is the generic, reusable one.
 - **Autonomy stops at the commit.** Fix and re-review on your own. A human approves before anything is committed.
-- **Report faithfully.** If a re-review shows anything STILL-OPEN or newly broken, say so and loop. "Approved" is a word for a tree both reviews came back clean on, and no other.
+- **Report faithfully.** If a re-review shows anything STILL-OPEN or newly broken, say so and loop. "Approved" means zero open blocker/major after the final checks, and no other.
+
+## Cost rules (override the steps below where they conflict)
+
+Why: in practice reviewers were ~25% of all model spend, mostly full two-lens re-reviews on the strongest model, and rounds 2+ found mostly minor items.
+
+- **Tier the diff.** *Small* = <200 changed lines and nothing in background jobs/automations, DB writes, retries, locks, auth, money. Small round 1: one `reviewer` with both lenses in one prompt, Agent `model: "sonnet"`, `effort: "medium"`. No Codex review/DA, no repros. Everything else: full round 1 below (Opus high).
+- **Re-review = delta, verdicts only.** Before each fix round record `git rev-parse HEAD` (or save the patch). Round ≥2: ONE `reviewer`, `model: "sonnet"`, `effort: "medium"`, given the findings file + the fix delta only. It marks each open finding CLOSED/PARTIALLY-CLOSED/STILL-OPEN with file:line, and may raise a new finding only if the fix delta introduced it or it is a blocker. Re-run the structure lens (Opus) only if the fix delta adds files or exceeds ~150 lines. On a risky diff, a blocker Sonnet marks PARTIALLY-CLOSED or unsure gets one Opus `reviewer` verdict.
+- **Severity gate.** Every finding is blocker / major / minor. Blocker+major loop. Minor gets one fix pass, then any leftover is listed as deferred at step 6; minors never trigger another round.
+- **Cap: round 1 + 2 re-reviews.** Blocker/major still open at the cap: one Codex stuck-breaker, then go to step 6 with the open list (not "approved").
+- **No Claude devil's advocate or six hats inside rwl**; `[codex-da]` covers it.
+- **Reviewer reading budget.** Start from the diff; read touched hunks ±60 lines and grep callers; no whole reads of files >400 lines; aim ≤20 tool calls.
+- **Fixer.** `implementer` (Opus high). A round with only minor findings: `model: "sonnet"`.
+- **Validation.** Fix rounds run targeted tests for touched files; full suite/build once at the final head.
 
 ## 1. Scope
 
@@ -34,12 +47,12 @@ Write the scope down (files, ref range) so both reviewers receive the identical 
 
 **Repository review rules.** Explicitly read root `REVIEW.md` when present and applicable `CLAUDE.md`/`AGENTS.md` instructions. Root `REVIEW.md` wins over any `.claude/REVIEW.md` backup; do not load both. Give the same rules to every review lens, devil's advocate, fixer, and re-review. The per-run correctness prompt adds current-change requirements instead of duplicating durable rules. If no `REVIEW.md` exists, continue with the project-specific prompt.
 
-Select validation by the diff and repository guidance. Slop is not a universal gate: skip when irrelevant and record why; retain applicable runtime, regression, and UI proof requirements. A review-rules change must not silently weaken the criteria used to review itself: compare with the base rules and report the policy change explicitly.
+Select validation by the diff and repository guidance. Expensive end-to-end suites (e.g. a long scenario/load harness) are opt-in: run them only when the owner asked; then once at the final head, and reds go back into the loop as findings. Retain applicable runtime, regression, and UI proof requirements. A review-rules change must not silently weaken the criteria used to review itself: compare with the base rules and report the policy change explicitly.
 
 
 ## 2. Review
 
-Spawn two subagents in the same message so they run concurrently. Both are read-only: no Edit, no Write, no shell commands that mutate the tree. Recommend a high-reasoning model at high or xhigh effort for each; this is the expensive step and it is where the loop earns its keep. Never run a review in the session that writes code.
+Spawn two subagents in the same message so they run concurrently. Both are read-only: no Edit, no Write, no shell commands that mutate the tree. Round 1 model/effort per Cost rules (non-small: Opus high); this is where the loop earns its keep. Never run a review in the session that writes code.
 
 **Structure review.** Invoke the `thermo-nuclear-code-quality-review` skill against the scope: the strict maintainability audit for abstraction quality, oversized files, and spaghetti-condition growth. If the skill is not installed, use an equivalent prompt: an unforgiving maintainability review that flags every abstraction that leaks, every file that has grown past one responsibility, and every condition chain that will sprout another branch next month.
 
@@ -53,17 +66,17 @@ Spawn two subagents in the same message so they run concurrently. Both are read-
 
 If the project has no correctness prompt yet, draft one first. Read the spec, README, ADRs, and design docs; write a prompt that names this project's invariants, its known failure modes, and the exact claims the code makes; save it beside the other review material (e.g. `scratchpad/CORRECTNESS-REVIEW.md`). Then run it. Do not genericize it — a prompt that could review any project catches nothing specific to this one.
 
-**Codex lens (round 1).** Claude does the review; Codex is one extra lens with a fixed, small budget (one Codex plan vs two Claude 20x accounts). Alongside the two subagents, run one `codex review` on round 1:
+**Codex lens (round 1, non-small only).** Claude does the review; Codex is one extra lens with a fixed, small budget (one Codex plan vs two Claude 20x accounts). Alongside the two subagents, run one `codex review` on round 1:
 
 ```sh
 nice -n 10 codex review --base <base> -c model_reasoning_effort=high > /tmp/rwl-codex-r1.md 2>&1
 ```
 
-`--base`/`--uncommitted`/`--commit` reject a custom prompt, so this runs Codex's built-in review prompt. It returns `[P0]`–`[P3]` findings with file:line; map P0/P1 to blockers. Use `--uncommitted` when the scope is the working tree, `--commit <sha>` for a single commit. Diff over ~1500 lines: `codex review` can't filter by path, so use `git diff <base>...HEAD -- <hot files> > /tmp/rwl-hot.patch` (DB writes, retries, locks, `service/` automations) and run `nice -n 10 codex exec -s read-only -c model_reasoning_effort=high "Review ONLY the diff in /tmp/rwl-hot.patch for correctness bugs; each: severity, file:line, why. No nits. If none, say NONE."` instead of skipping it. If `codex` is missing or fails, say so in the report and carry on; never block the loop on it, never retry it. Its findings are merged tagged `[codex]`; re-reviews verify them like any other finding.
+`--base`/`--uncommitted`/`--commit` reject a custom prompt, so this runs Codex's built-in review prompt. It returns `[P0]`–`[P3]` findings with file:line; map P0/P1 to blockers. Use `--uncommitted` when the scope is the working tree, `--commit <sha>` for a single commit. Diff over ~1500 lines: `codex review` can't filter by path, so use `git diff <base>...HEAD -- <hot files> > /tmp/rwl-hot.patch` (DB writes, retries, locks, background jobs) and run `nice -n 10 codex exec -s read-only -c model_reasoning_effort=high "Review ONLY the diff in /tmp/rwl-hot.patch for correctness bugs; each: severity, file:line, why. No nits. If none, say NONE."` instead of skipping it. If `codex` is missing or fails, say so in the report and carry on; never block the loop on it, never retry it. Its findings are merged tagged `[codex]`; re-reviews verify them like any other finding.
 
 When `REVIEW.md` exists, use `codex exec -s read-only` instead of the built-in `codex review` for round 1 and the final check, keeping the same call budget and reasoning effort. Supply a self-contained prompt naming the exact review scope (base/ref or patch, plus any in-scope staged/unstaged/untracked files), root `REVIEW.md`, and applicable project instructions; require the agent to read them before reviewing. Do not assume CLI auto-discovery of `REVIEW.md`. The hot-diff fallback and devil's advocate prompts must include these instructions too. Preserve the full original scope in the final check.
 
-**Codex devil's advocate (round 1).** In the same message as the reviewers, one call that argues against the change and the idea behind it:
+**Codex devil's advocate (round 1, non-small only).** In the same message as the reviewers, one call that argues against the change and the idea behind it:
 
 ```sh
 nice -n 10 codex exec -s read-only -c model_reasoning_effort=high -o /tmp/rwl-codex-da.md \
@@ -75,7 +88,7 @@ nice -n 10 codex exec -s read-only -c model_reasoning_effort=high -o /tmp/rwl-co
 
 Tag its findings `[codex-da]`. CHANGES items merge like any finding. IDEAS items the fixer can't settle alone (drop or reframe the feature) don't loop: the orchestrator decides adopt/reject with a one-line reason, records it in the findings file, and shows it at step 6. If `codex` is missing or fails, say so and carry on; never retry it.
 
-**Codex repros (risky diffs only).** If the diff touches `service/`, DB writes, retries or locks and round 1 found blockers, run one more `codex exec` in a throwaway worktree (`-s workspace-write`, never the review tree) to write a failing test per blocker. The fixer gets those tests and must turn them green. Skip this on every other diff.
+**Codex repros (risky diffs only).** If the diff touches background jobs, DB writes, retries or locks and round 1 found blockers, run one more `codex exec` in a throwaway worktree (`-s workspace-write`, never the review tree) to write a failing test per blocker. The fixer gets those tests and must turn them green. Skip this on every other diff.
 
 **Codex budget per loop:** round 1 review + devil's advocate + final clean round (step 5) = 3 calls, +1 for repros on risky diffs, +1 per stuck-breaker (step 4). Nothing else: re-review rounds, the Claude devil's advocate and six hats stay on Claude, and `codex exec` second opinions run only when the human asks.
 
@@ -94,10 +107,11 @@ Expect the overlap to be small. The findings only one lens caught are why both r
 
 ## 4. Fix
 
-Spawn a single code-writing agent (recommend a strong coding model at xhigh effort) with the merged findings file. It works alone: no reviewer is running while it edits.
+Spawn a single code-writing agent (`implementer`; model per Cost rules) with the merged findings file. It works alone: no reviewer is running while it edits.
 
 - Work in ranked order, blockers first.
 - Keep typecheck and build green after each fix; a fix that breaks the build is not a fix.
+- No expensive end-to-end suites while fixing (opt-in only, once at the final head).
 - For each finding, record what changed and where (file:line), appended to the findings file.
 - Fix what the findings say. Unrelated refactors widen the next review for no reason.
 
@@ -107,18 +121,17 @@ Fixer done means: every finding has a recorded change or an explicit, justified 
 
 ## 5. Re-review
 
-Wait for the fixer to exit. Confirm the tree is quiet. Then re-run **both** reviews in parallel against the fixed tree, giving each reviewer the findings file.
+Wait for the fixer to exit. Confirm the tree is quiet. Then run the delta re-review from Cost rules (one Sonnet reviewer; structure lens only if triggered), giving it the findings file and fix delta.
 
-Each reviewer must:
+The reviewer must:
 
 - Mark every original finding **CLOSED**, **PARTIALLY-CLOSED**, or **STILL-OPEN**, with file:line proof for the verdict.
-- Hunt for anything the fixes newly broke: regressions, new duplication, invariants the fix moved rather than restored.
+- Hunt for anything the fixes newly broke, inside the fix delta: regressions, new duplication, invariants the fix moved rather than restored.
 
-Merge the verdicts back into the findings file. Loop condition: any PARTIALLY-CLOSED, any STILL-OPEN, or any new finding sends you back to step 4 with the updated list. Repeat until both reviews return zero open findings and zero new ones.
+Merge the verdicts back into the findings file. Loop condition: any blocker/major PARTIALLY-CLOSED, STILL-OPEN or new sends you back to step 4, up to the cap. Clean = zero open blocker/major; leftover minors are listed as deferred.
 
-Clean means both reviews, not one.
+**Codex final check (non-small only).** When the re-review comes back clean, run one `codex review --base <base>` (same command as round 1, output to `/tmp/rwl-codex-final.md`) on the full diff to catch regressions the fixer added. Any real finding goes back to step 4 like any other finding. A clean result, or Codex missing or failing (say so), lets you go on to step 6.
 
-**Codex final check.** When both Claude reviews come back clean, run one `codex review --base <base>` (same command as round 1, output to `/tmp/rwl-codex-final.md`) on the full diff to catch regressions the fixer added. Any real finding goes back to step 4 like any other finding. A clean result, or Codex missing or failing (say so), lets you go on to step 6.
 
 ## 6. Commit
 
@@ -135,7 +148,8 @@ Commit only on explicit approval. If the human declines or changes scope, return
 
 At the end of every run, report the loop's true state:
 
-- how many review rounds ran
+- tier (small / full) and how many review rounds ran
+- deferred minors
 - findings caught, by lens (incl. codex, or why it was skipped), and how many each round closed
 - codex calls used (round 1 / devil's advocate / repros / stuck-breakers / final) out of the budget
 - anything still open (there should be none if you reached step 6; if there is, you have not reached step 6)
